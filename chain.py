@@ -23,15 +23,14 @@ class BlockChain():
             # Hash value is last 160bits(=20bytes)
             new_block = {
                 'BlockID' : len(self.chain), 
-                'PreviousHashval': hashlib.sha3_256(self.chain[-1]['PreviousHashval'].encode()).hexdigest()[:20],
-                'Transaction': self.new_transaction()
+                'PreviousHashval' : self.hash_lastblock(),
+                'Transaction' : self.new_transaction()
             }
-
         else:   # Case of Genesis Block
             new_block = {
                 'BlockID' : len(self.chain), 
-                'PreviousHashval': 'Genesis Block', #! or 0x00?
-                'Transaction': self.new_transaction()
+                'PreviousHashval' : 0x00,
+                'Transaction' : self.new_transaction()
             }
         self.chain.append(new_block)
 
@@ -53,10 +52,17 @@ class BlockChain():
         self.transaction.append(new_trans)
         return new_trans
 
-    def hash(block):
-        #? Data hashing(SHA3-256)
+    def hash_lastblock(self) -> str:
+        #? Returns a SHA3-256 hash value of the last block
         #todo SHA3-256 implementation & optimization
-        pass
+        tmp = []
+        tmp.append(self.last_block()['BlockID'])
+        tmp.append(self.last_block()['PreviousHashval'])
+        for tr in self.last_block()['Transaction']:
+            tmp.append(tr)
+            tmp.append(self.last_block()['Transaction'][tr])
+        ret = hashlib.sha3_256((''.join(str(x) for x in tmp).encode())).hexdigest()[:20]
+        return ret
 
     def genesis_block(self) -> dict:
         #? Return Genesis Block of the chain
@@ -81,8 +87,8 @@ class BlockChain():
         #? Return a large random integer with
         ret = ""
         for _ in range(digits // 16):
-            ret = ret + str(math.floor(random.random() * 10000000000000000))
-        ret = ret + str(math.floor(random.random() * (10 ** (digits % 16))))
+            ret = ret + str(math.floor(random.random() * (10 ** 16)))
+        ret += str(math.floor(random.random() * (10 ** (digits % 16))))
         return int(ret)
 
 # EOF
