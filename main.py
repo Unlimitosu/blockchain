@@ -1,9 +1,8 @@
 import chain
+import platform
 
 def main():
-    block = chain.BlockChain()
-    block.new_block()
-    block.new_block()
+    block = chain.BlockChain(5)
     block.print_chain()
 
 if __name__=="__main__":
