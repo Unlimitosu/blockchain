@@ -8,7 +8,6 @@ import math
 import ctypes
 import multiprocessing as mp
 from concurrent import futures
-from re import L
 
 class BlockChain():
     def __init__(self, numofblocks : int) -> None:
@@ -17,6 +16,7 @@ class BlockChain():
         self.chain       = []
         self.transaction = []
         self.hashval     = []
+        self.txvalmod = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
         
         #? SHA3 constants
         self.__SHA3outlen   = ctypes.c_int(32)
@@ -24,9 +24,14 @@ class BlockChain():
         self.__SHA3bitsize  = ctypes.c_int(256) # bitsize = 8 * outlen
         self.__SHA3useSHAKE = ctypes.c_int(0)
         
+        if (self.numofblocks > (1<<160)):
+            raise Exception("Chain length is larger than 2**160")
+        
         self.__genesis_block()
-        for _ in range(self.numofblocks):
+        for i in range(self.numofblocks):
             self.__new_block()
+            if i%(2**5)==0:
+                print('.',end='')
 
 #: generate block/info functions
     def __genesis_block(self) -> None:
@@ -40,24 +45,20 @@ class BlockChain():
 
     def __new_block(self) -> None:
         #? Create new block and add to the chain
-        # BlockID is 160bits
-        if len(self.chain)>(1<<160):
-            raise Exception("Chain length is larger than 2**160")
         # Hash value is last 160bits(=20bytes)
         new_block = {
                 'Transaction' : self.__new_transaction(),
-                'BlockID' : len(self.chain), 
+                'BlockID' : str('0' * (20 - len(str(self.chain_len()))) + str(self.chain_len())), 
                 'PreviousHashval' : self.__ctype_hash_lastblock()
             }
         self.chain.append(new_block)
 
     def __new_transaction(self) -> dict:
         #? Create new transaction to the transaction list with 8 (TxID, TransactionValue) pairs
-        new_trans = {}
-        while len(new_trans.keys()) <= 8:
-            key=self.__get_large_randint(160) ^ 0x14 # 20
-            if key not in new_trans:
-                new_trans[key] = self.__get_large_randint(864) ^ 0x6C # 108
+        new_trans = []
+        for i in range(8):
+            txID = '0'*19 + str(i)
+            new_trans.append(int(str(self.__get_large_randint(400) & self.txvalmod) + txID))
         self.transaction.append(new_trans)
         return new_trans
 
@@ -69,6 +70,18 @@ class BlockChain():
     def __ctype_hash_lastblock(self) -> str:
         #? SHA-3 hashing using ctypes module
         val = bytes(list(self.__lastblock_info().encode()))
+        ret = bytes([0] * 32)    
+        
+        libc = ctypes.CDLL('./sha3dll.dll') # import C code dll file
+        #libc.sha3_hash.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        #libc.sha3_hash.restype = ctypes.c_int
+        libc.sha3_hash(ret, self.__SHA3outlen, val, 
+                       self.__SHA3inlen, self.__SHA3bitsize, self.__SHA3useSHAKE)
+        return self.__parse_bytes(ret)
+    
+    def __ctype_hash_block(self, idx: int) -> str:
+        #? SHA-3 hashing using ctypes module
+        val = bytes(list(self.__block_info(idx).encode()))
         ret = bytes([0] * 32)    
         
         libc = ctypes.CDLL('./sha3dll.dll') # import C code dll file
@@ -167,10 +180,19 @@ class BlockChain():
         tmp.append(self.last_block()['PreviousHashval'])
         for tx in self.last_block()['Transaction']:
             tmp.append(tx)
-            tmp.append(self.last_block()['Transaction'][tx])
         return ''.join(str(x) for x in tmp)
     
-    def __transaction_info(self) -> list:
+    def __block_info(self, idx : int) -> str:
+        #? Returns the concatenation of information of a block index idx
+        block = self.chain[idx]
+        tmp = []
+        tmp.append(block['BlockID'])
+        tmp.append(block['PreviousHashval'])
+        for tx in block['Transaction']:
+            tmp.append(tx)
+        return ''.join(str(x) for x in tmp)
+    
+    def tx_info(self) -> list:
         #? Return a list of transaction info
         ret = []
         for block in self.chain:
@@ -184,10 +206,32 @@ class BlockChain():
             ret.append(block['BlockID'] + block['PreviousHashval'])
         return ret
     
+    def tx_info_for_ctypes(self) -> list:
+        #? Returns a list of transaction values
+        ret = []
+        txinfo = self.tx_info()
+        for block in txinfo:
+            fflist = []
+            for txval in block:
+                tmp = []
+                while txval != 0:
+                    tmp.append(txval & 0xff)
+                    txval >>= 2
+                while len(tmp) <= 128:
+                    tmp.append(0)
+                fflist += tmp[::-1]
+            ret.append(fflist) 
+        return ret
+    
 #: verify functions
     def vaild_transaciton(self) -> bool:
         #? Validate the transaction
-        pass
+        hashval = self.__ctype_hash_block(0)
+        for i in range(1,self.chain_len()):
+            if self.chain[i]['PrevHashval'] != hashval:
+                raise Exception(f'Verify Failed: {i}-th block')
+            hashval = self.__ctype_hash_block(i)
+        return True
 
 #: etc(incl. debug)
     def print_chain(self) -> None:
@@ -195,6 +239,7 @@ class BlockChain():
         print('Current Chain:')
         for blocks in self.chain:
             print('BlockID:', blocks['BlockID'])
+            print("Tx: ", blocks['Transaction'])
             print('PrevHashval:', blocks['PreviousHashval'],'\n')
     
     def __get_large_randint(self, digits) -> int:
