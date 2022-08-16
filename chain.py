@@ -224,11 +224,12 @@ class BlockChain():
         return ret
     
 #: verify functions
-    def vaild_transaciton(self) -> bool:
-        #? Validate the transaction
-        hashval = self.__ctype_hash_block(0)
+    def vaild_transaction(self) -> bool:
+        #? Validate the transaction with previous hash value
+        hashval = self.__ctype_hash_block(0)    # Hash value of the genesis block
+        # Verify the hash value precedurally
         for i in range(1,self.chain_len()):
-            if self.chain[i]['PrevHashval'] != hashval:
+            if self.chain[i]['PreviousHashval'] != hashval:
                 raise Exception(f'Verify Failed: {i}-th block')
             hashval = self.__ctype_hash_block(i)
         return True
